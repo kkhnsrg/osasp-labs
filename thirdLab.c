@@ -5,6 +5,7 @@
 #include<sys/wait.h>
 #include<fcntl.h>
 #include<alloca.h>
+#include<malloc.h>
 #include<stdio.h>
 #include<stdlib.h>
 #include<string.h>
@@ -16,8 +17,8 @@
 
 char *AppName;
 int chldcnt = 0, mxchldcnt = 0;
-
-int BUF_SIZE;
+unsigned long long BUF_SIZE = 1024*1024*1024;
+char *read_buffer;
 
 int WC(char *path){
 	int f = open(path, O_RDONLY);
@@ -27,28 +28,33 @@ int WC(char *path){
 	}
 	char flag=-1;
 	unsigned w=0, b=0;
-	char buf[BUF_SIZE];
+	read_buffer = malloc(BUF_SIZE);
+	
 	int cnt = 0;
-	while((cnt = read(f, &buf, sizeof(BUF_SIZE))) != 0){
+	while((cnt = read(f, read_buffer, BUF_SIZE)) != 0){
 		if(cnt == -1){
 			fprintf(stderr, "%s: %s. File: %s\n", AppName, strerror(errno), path);
 			exit(-1);
 		}
 		for(int i = 0;i<cnt;i++){
 			b++;
-			switch(buf[i]){
+			switch(read_buffer[i]){
 				case ' ':
 				case '\n':
 				case '\t':
+				case '\v':
+				case '\f':
+				case '\r':
 					flag = -1;
 					break;
 				default:
+					if (read_buffer[i]> 0x20 && read_buffer[i] < 0x7F) 
 					if(flag==-1){ flag = 1; w++; }
 					break;
 			}
 		}
 	}
-	
+	free(read_buffer);
 	printf("%d %s %u %u\n",(int)getpid(), path, b, w);
 	if(close(f) == -1){
 		fprintf(stderr, "%s: %s. File: %s\n", AppName, strerror(errno), path);
@@ -65,7 +71,7 @@ void WORK(char *curPath){
 		return;
 	}
 	struct dirent *dent;
-	char *file = alloca(strlen(curPath) + NAME_MAX + 2); //strlen(dent->d_name)
+	char *file = alloca(strlen(curPath) + NAME_MAX + 2);
 	if(file==NULL){
 		fprintf(stderr,"%s: %s.", AppName, strerror(errno));
 		return;
@@ -97,7 +103,6 @@ void WORK(char *curPath){
 						errno = 0;
 						break;
 					case (pid_t)0:
-						BUF_SIZE = buf.st_blksize;
 						WC(file);
 						break;
 					default:
